@@ -1,10 +1,11 @@
-name: Build OpenWrt Pesa+Fullcone GL-MT6000
+name: Build MT6000 OpenWrt
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
 
 jobs:
   build:
@@ -18,30 +19,43 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Clone pesa1234 openwrt
-        run: |
-          git clone --depth 1 -b main https://github.com/pesa1234/openwrt.git .
-
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential clang flex bison g++ gawk \
-            gcc-multilib g++-multilib gettext git libncurses-dev \
-            libssl-dev python3-setuptools rsync unzip zlib1g-dev \
-            file wget quilt automake autoconf libtool
+          sudo apt update
+          sudo apt install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+          python3-setuptools rsync swig unzip zlib1g-dev file wget llvm
 
-      - name: Apply turboacc patches
+      - name: Clone sources
         run: |
-          curl -sL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh
+          git clone --branch next-r4.7.3.rss.mtk --single-branch https://github.com/pesa1234/openwrt.git openwrt
+          cd openwrt
+          git log --oneline -5
+
+      - name: Update feeds
+        run: |
+          cd openwrt
+          for i in 1 2 3; do
+            ./scripts/feeds update -a && break
+            echo "Retry $i..."
+            sleep 30
+          done
+          ./scripts/feeds install -a
+
+      - name: Apply turboacc fullcone patches
+        run: |
+          cd openwrt
+          curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh -o add_turboacc.sh
           bash add_turboacc.sh --no-sfe
 
       - name: Fix fullcone dependencies
         run: |
+          cd openwrt
           find . -path "*/nft-fullcone/Makefile" -exec sed -i 's/kmod-nf-conntrack6//g' {} \;
 
       - name: Add fullcone patches from ImmortalWrt
         run: |
+          cd openwrt
           # libnftnl
           mkdir -p package/libs/libnftnl/patches
           curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/libs/libnftnl/patches/001-libnftnl-add-fullcone-expression-support.patch" \
@@ -75,78 +89,113 @@ jobs:
           curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/utils/fullconenat/src/Makefile" \
             -o package/network/utils/fullconenat/src/Makefile
 
-      - name: Update feeds
+      - name: Import config
         run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Configure
-        run: |
-          cat >> .config << 'EOF'
-          CONFIG_TARGET_mediatek=y
-          CONFIG_TARGET_mediatek_filogic=y
-          CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt6000=y
-          CONFIG_PACKAGE_kmod-nft-fullcone=y
-          CONFIG_PACKAGE_kmod-sched=y
-          CONFIG_PACKAGE_kmod-sched-cake=y
-          CONFIG_PACKAGE_kmod-sched-core=y
-          CONFIG_PACKAGE_kmod-sched-ctinfo=y
-          CONFIG_PACKAGE_kmod-sched-connmark=y
-          CONFIG_PACKAGE_kmod-sched-flower=y
-          CONFIG_PACKAGE_kmod-sched-bpf=y
-          CONFIG_PACKAGE_kmod-sched-red=y
-          CONFIG_PACKAGE_kmod-sched-prio=y
-          CONFIG_PACKAGE_kmod-ifb=y
-          CONFIG_PACKAGE_kmod-veth=y
-          CONFIG_PACKAGE_kmod-netem=y
-          CONFIG_PACKAGE_luci=y
-          CONFIG_PACKAGE_luci-ssl=y
-          CONFIG_PACKAGE_luci-app-firewall=y
-          CONFIG_PACKAGE_luci-app-sqm=y
-          CONFIG_PACKAGE_luci-app-upnp=y
-          CONFIG_PACKAGE_luci-app-statistics=y
-          CONFIG_PACKAGE_luci-app-nlbwmon=y
-          CONFIG_PACKAGE_sqm-scripts=y
-          CONFIG_PACKAGE_miniupnpd-nftables=y
-          CONFIG_PACKAGE_firewall4=y
-          CONFIG_PACKAGE_nftables=y
-          CONFIG_PACKAGE_tc-full=y
-          CONFIG_PACKAGE_ip-full=y
-          CONFIG_PACKAGE_curl=y
-          CONFIG_PACKAGE_wget-ssl=y
-          CONFIG_PACKAGE_tcpdump=y
-          CONFIG_PACKAGE_iperf3=y
-          CONFIG_PACKAGE_ethtool-full=y
-          CONFIG_PACKAGE_irqbalance=y
-          CONFIG_PACKAGE_nano=y
-          CONFIG_PACKAGE_htop=y
-          CONFIG_PACKAGE_bash=y
-          CONFIG_PACKAGE_jq=y
-          CONFIG_PACKAGE_coreutils-sleep=y
-          CONFIG_ALL_KMODS=y
-          CONFIG_ALL_NONSHARED=y
-          EOF
+          cd openwrt
+          wget https://raw.githubusercontent.com/pesa1234/MT6000_cust_build/refs/heads/main/2026-02-07_r33756-49c9934b50_next-r4.7.2.rss.mtk/targets/mediatek/filogic/config.buildinfo -O .config
+          echo "CONFIG_PACKAGE_kmod-nft-fullcone=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-turboacc=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-cake=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-prio=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-ctinfo=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-flower=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-act-vlan=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-red=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-ifb=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-netem=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-veth=y" >> .config
+          echo "CONFIG_PACKAGE_sqm-scripts=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-sqm=y" >> .config
+          echo "CONFIG_PACKAGE_tc-full=y" >> .config
+          echo "CONFIG_PACKAGE_ip-full=y" >> .config
+          echo "CONFIG_PACKAGE_iptables-nft=y" >> .config
+          echo "CONFIG_PACKAGE_iptables-mod-ipopt=y" >> .config
+          echo "CONFIG_PACKAGE_iptables-mod-conntrack-extra=y" >> .config
+          echo "CONFIG_PACKAGE_iptables-mod-extra=y" >> .config
+          echo "CONFIG_PACKAGE_iptables-mod-filter=y" >> .config
+          echo "CONFIG_PACKAGE_ip6tables-nft=y" >> .config
+          echo "CONFIG_PACKAGE_miniupnpd-nftables=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-upnp=y" >> .config
+          echo "CONFIG_PACKAGE_tcpdump=y" >> .config
+          echo "CONFIG_PACKAGE_iperf3=y" >> .config
+          echo "CONFIG_PACKAGE_curl=y" >> .config
+          echo "CONFIG_PACKAGE_bind-dig=y" >> .config
+          echo "CONFIG_PACKAGE_mtr=y" >> .config
+          echo "CONFIG_PACKAGE_ethtool-full=y" >> .config
+          echo "CONFIG_PACKAGE_irqbalance=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-statistics=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-nlbwmon=y" >> .config
+          echo "CONFIG_PACKAGE_nano=y" >> .config
+          echo "CONFIG_PACKAGE_jq=y" >> .config
+          echo "CONFIG_PACKAGE_htop=y" >> .config
+          echo "CONFIG_PACKAGE_bash=y" >> .config
+          echo "CONFIG_PACKAGE_diffutils=y" >> .config
+          echo "CONFIG_PACKAGE_less=y" >> .config
+          echo "CONFIG_PACKAGE_luci-lib-jsonc=y" >> .config
+          echo "CONFIG_PACKAGE_lua=y" >> .config
+          echo "CONFIG_PACKAGE_coreutils-sleep=y" >> .config
+          echo "CONFIG_ALL_KMODS=y" >> .config
+          echo "CONFIG_ALL=y" >> .config
           make defconfig
 
-      - name: Download sources
-        run: make download -j$(nproc)
+      - name: Download packages
+        run: |
+          cd openwrt
+          make download -j$(nproc)
 
       - name: Build firmware
-        run: make -j$(nproc) IGNORE_ERRORS=m || make -j1 V=s IGNORE_ERRORS=m
+        run: |
+          cd openwrt
+          make -j$(nproc) IGNORE_ERRORS=m || make -j1 V=s IGNORE_ERRORS=m
+
+      - name: Debug build outputs
+        if: always()
+        run: |
+          cd openwrt
+          echo "=== Directory structure ==="
+          find bin/ -maxdepth 4 -type d 2>/dev/null
+          echo "=== IPK files count ==="
+          find bin/ -name "*.ipk" 2>/dev/null | wc -l
+          echo "=== Firmware files ==="
+          find bin/ -name "*sysupgrade*" -o -name "*factory*" 2>/dev/null
+          echo "=== bin/ total size ==="
+          du -sh bin/
+          echo "=== Disk space ==="
+          df -h
+
+      - name: Prepare package repository
+        if: always()
+        run: |
+          cd openwrt
+          mkdir -p /tmp/pkg-repo
+          cp -a bin/* /tmp/pkg-repo/ 2>/dev/null || true
+          echo "=== IPK count ==="
+          find /tmp/pkg-repo -name "*.ipk" 2>/dev/null | wc -l
+          du -sh /tmp/pkg-repo/
+
+      - name: Deploy to gh-pages
+        if: always()
+        run: |
+          cd /tmp/pkg-repo
+          FILE_COUNT=$(find . -type f | wc -l)
+          echo "Files to deploy: $FILE_COUNT"
+          if [ "$FILE_COUNT" -gt 0 ]; then
+            git init
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
+            git checkout -b gh-pages
+            git add .
+            git commit -m "Package repo $(date -u +%Y-%m-%d_%H%M%S)"
+            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            git push -f origin gh-pages
+          fi
 
       - name: Upload firmware artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-pesa-gl-mt6000-fullcone
-          path: |
-            bin/targets/mediatek/filogic/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-sysupgrade.bin
-            bin/targets/mediatek/filogic/openwrt-mediatek-filogic-glinet_gl-mt6000-squashfs-factory.bin
-          if-no-files-found: warn
-
-      - name: Upload logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            build.log
+          name: mt6000-build
+          path: openwrt/bin/
