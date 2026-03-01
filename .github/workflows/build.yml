@@ -10,8 +10,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
-
     steps:
       - name: Free disk space
         run: |
@@ -28,7 +26,7 @@ jobs:
 
       - name: Clone sources
         run: |
-          git clone --branch next-r4.7.3.rss.mtk --single-branch https://github.com/pesa1234/openwrt.git openwrt
+          git clone --branch next-r4.7.3.rss.mtk --single-branch https://github.com/${{ github.repository }}.git openwrt
           cd openwrt
           git log --oneline -5
 
@@ -52,47 +50,12 @@ jobs:
         run: |
           cd openwrt
           find . -path "*/nft-fullcone/Makefile" -exec sed -i 's/kmod-nf-conntrack6//g' {} \;
-
-      - name: Add fullcone patches from ImmortalWrt
-        run: |
-          cd openwrt
-          # libnftnl
-          mkdir -p package/libs/libnftnl/patches
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/libs/libnftnl/patches/001-libnftnl-add-fullcone-expression-support.patch" \
-            -o package/libs/libnftnl/patches/001-libnftnl-add-fullcone-expression-support.patch
-          sed -i '/^PKG_INSTALL/i PKG_FIXUP:=autoreconf' package/libs/libnftnl/Makefile
-
-          # nftables
-          mkdir -p package/network/utils/nftables/patches
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/utils/nftables/patches/002-nftables-add-fullcone-expression-support.patch" \
-            -o package/network/utils/nftables/patches/002-nftables-add-fullcone-expression-support.patch
-
-          # firewall4
-          mkdir -p package/network/config/firewall4/patches
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch" \
-            -o package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
-
-          # fullconenat-nft
-          mkdir -p package/network/utils/fullconenat-nft/patches
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/utils/fullconenat-nft/Makefile" \
-            -o package/network/utils/fullconenat-nft/Makefile
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/utils/fullconenat-nft/patches/010-fix-build-with-kernel-6.12.patch" \
-            -o package/network/utils/fullconenat-nft/patches/010-fix-build-with-kernel-6.12.patch
-
-          # fullconenat
-          mkdir -p package/network/utils/fullconenat/patches
-          mkdir -p package/network/utils/fullconenat/src
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/utils/fullconenat/Makefile" \
-            -o package/network/utils/fullconenat/Makefile
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/utils/fullconenat/patches/000-printk.patch" \
-            -o package/network/utils/fullconenat/patches/000-printk.patch
-          curl -sL "https://raw.githubusercontent.com/immortalwrt/immortalwrt/master/package/network/utils/fullconenat/src/Makefile" \
-            -o package/network/utils/fullconenat/src/Makefile
+          find . -path "*/nft-fullcone/Makefile" -exec cat {} \;
 
       - name: Import config
         run: |
           cd openwrt
-          wget https://raw.githubusercontent.com/pesa1234/MT6000_cust_build/refs/heads/main/2026-02-07_r33756-49c9934b50_next-r4.7.2.rss.mtk/targets/mediatek/filogic/config.buildinfo -O .config
+          wget https://raw.githubusercontent.com/pesa1234/MT6000_cust_build/refs/heads/main/2025-04-19_r29721-5111451803_next-r4.5.34.rss.mtk/targets/mediatek/filogic/config.buildinfo -O .config
           echo "CONFIG_PACKAGE_kmod-nft-fullcone=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-turboacc=y" >> .config
           echo "CONFIG_PACKAGE_kmod-sched=y" >> .config
@@ -136,7 +99,6 @@ jobs:
           echo "CONFIG_PACKAGE_less=y" >> .config
           echo "CONFIG_PACKAGE_luci-lib-jsonc=y" >> .config
           echo "CONFIG_PACKAGE_lua=y" >> .config
-          echo "CONFIG_PACKAGE_coreutils-sleep=y" >> .config
           echo "CONFIG_ALL_KMODS=y" >> .config
           echo "CONFIG_ALL=y" >> .config
           make defconfig
@@ -157,8 +119,8 @@ jobs:
           cd openwrt
           echo "=== Directory structure ==="
           find bin/ -maxdepth 4 -type d 2>/dev/null
-          echo "=== IPK files count ==="
-          find bin/ -name "*.ipk" 2>/dev/null | wc -l
+          echo "=== APK files count ==="
+          find bin/ -name "*.apk" 2>/dev/null | wc -l
           echo "=== Firmware files ==="
           find bin/ -name "*sysupgrade*" -o -name "*factory*" 2>/dev/null
           echo "=== bin/ total size ==="
@@ -172,11 +134,11 @@ jobs:
           cd openwrt
           mkdir -p /tmp/pkg-repo
           cp -a bin/* /tmp/pkg-repo/ 2>/dev/null || true
-          echo "=== IPK count ==="
-          find /tmp/pkg-repo -name "*.ipk" 2>/dev/null | wc -l
+          echo "=== Package repo contents ==="
+          find /tmp/pkg-repo -name "*.apk" 2>/dev/null | wc -l
           du -sh /tmp/pkg-repo/
 
-      - name: Deploy to gh-pages
+      - name: Deploy to gh-pages branch
         if: always()
         run: |
           cd /tmp/pkg-repo
@@ -188,12 +150,15 @@ jobs:
             git config user.email "actions@github.com"
             git checkout -b gh-pages
             git add .
-            git commit -m "Package repo $(date -u +%Y-%m-%d_%H%M%S)"
+            git commit -m "Package repo update $(date -u +%Y-%m-%d_%H%M%S)"
             git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
             git push -f origin gh-pages
+            echo "Deployed $FILE_COUNT files to gh-pages"
+          else
+            echo "WARNING: No files found to deploy"
           fi
 
-      - name: Upload firmware artifact
+      - name: Upload all build outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
