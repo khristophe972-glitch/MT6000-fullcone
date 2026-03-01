@@ -26,7 +26,7 @@ jobs:
 
       - name: Clone sources
         run: |
-          git clone --branch next-r4.7.3.rss.mtk --single-branch https://github.com/${{ github.repository }}.git openwrt
+          git clone --branch next-r4.7.3.rss.mtk --single-branch https://github.com/pesa1234/openwrt.git openwrt
           cd openwrt
           git log --oneline -5
 
